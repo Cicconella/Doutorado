@@ -19,26 +19,6 @@ def extrair_cd_exame(nome_arquivo: str) -> str:
     return base.lower()
 
 
-##### Dados extraidos do banco de dados - versao larga ##### 
-
-dados_pc = pd.read_csv("/home/aninha/Desktop/Doutorado/Dados/tabela_cpd_larga.csv")
-# print(dados_pc.head())
-
-# print(dados_pc.shape)
-
-
-##### Dados extraidos do CVAT de auditoria e processados pela Papiron ##### 
-
-dados_preditos = pd.read_csv("/home/aninha/Desktop/Doutorado/Dados/anotadas/results.csv")
-# print(dados_preditos.head())
-
-# print(dados_preditos.shape)
-
-# print(dados_preditos.achado.unique())
-
-
-# 1) Normaliza "achado" e define o conjunto que será considerado "obturado"
-
 achados_ausente_norm = {
     "dente ausente"
 }
@@ -49,11 +29,78 @@ achados_carie_norm = {
 
 achados_obturado_norm = {
     "restauracao",
-    "condutos obturados",  
-    "retentor intraradicular",
+    "condutos obturados",
     "coroa unitaria sobre dente",
     "protese fixa sobre dente"
 }
+
+todos_dentes = list(range(11, 19)) + list(range(21, 29)) + list(range(31, 39)) + list(range(41, 49))
+
+##### Dados extraidos do banco de dados - versao larga ##### 
+
+dados_pc = pd.read_csv("/home/aninha/Desktop/Doutorado/Dados/tabela_cpd_larga.csv")
+print(dados_pc.head())
+# print(dados_pc.shape)
+
+dados_auditoria = pd.read_csv("/home/aninha/Desktop/Doutorado/Dados/anotadas/associacao_com_gabarito_dente_achado.csv")
+print(dados_auditoria.head())
+
+
+achado_norm = (
+    dados_auditoria["Achado"]
+    .astype(str)
+    .str.lower()
+    .map(strip_accents)
+    .str.strip()
+)
+
+df_obturado = dados_auditoria[achado_norm.isin(achados_obturado_norm)].copy()
+
+df_obturado["cd_exame"] = df_obturado["filename"].map(extrair_cd_exame)
+
+# Marca uma ocorrência de "obturado" por linha
+df_obturado["obturado"] = 1
+
+# Tabela dinâmica (somando ocorrências por exame x dente)
+wide_obturado = (
+    df_obturado
+    .pivot_table(index="cd_exame", columns="Dente", values="obturado", aggfunc="sum", fill_value=0)
+    .sort_index(axis=1)
+)
+
+# Garante a grade completa de dentes (11–18, 21–28, 31–38, 41–48) e renomeia colunas
+wide_obturado = wide_obturado.reindex(columns=todos_dentes, fill_value=0)
+
+wide_obturado.columns = [f"obturado_{d}" for d in wide_obturado.columns]
+
+# 6) Limita o valor máximo a 2 por dente, como você pediu
+wide_obturado = wide_obturado.clip(upper=2)
+
+# Resultado final
+resultado_obturado = wide_obturado.reset_index()
+print(resultado_obturado.head())
+
+# print("Exames analisados:")
+# print(len(resultado_obturado.cd_exame.unique()))
+
+final = pd.merge(dados_pc, resultado_obturado, on="cd_exame", how="outer")
+print(final.head())
+
+print("Exames analisados - final:")
+print(len(final.cd_exame.unique()))
+
+final.to_csv("/home/aninha/Desktop/Doutorado/Dados/tabela_cpod_larga_gabarito.csv", index=False)
+
+##### Dados extraidos do CVAT de auditoria e processados pela Papiron ##### 
+
+dados_preditos = pd.read_csv("/home/aninha/Desktop/Doutorado/Dados/anotadas/results.csv")
+# print(dados_preditos.head())
+# print(dados_preditos.shape)
+# print(dados_preditos.achado.unique())
+# print("Exames analisados:")
+# print(len(dados_preditos.cd_exame.unique()))
+
+# 1) Normaliza "achado" e define o conjunto que será considerado "obturado"
 
 achado_norm = (
     dados_preditos["achado"]
@@ -62,7 +109,6 @@ achado_norm = (
     .map(strip_accents)
     .str.strip()
 )
-
 
 #Criando tabela para ausentes
 
@@ -80,7 +126,6 @@ wide_ausente = (
 )
 
 # Garante a grade completa de dentes (11–18, 21–28, 31–38, 41–48) e renomeia colunas
-todos_dentes = list(range(11, 19)) + list(range(21, 29)) + list(range(31, 39)) + list(range(41, 49))
 wide_ausente = wide_ausente.reindex(columns=todos_dentes, fill_value=0)
 
 wide_ausente.columns = [f"ausente_{d}" for d in wide_ausente.columns]
@@ -91,6 +136,9 @@ wide_ausente = wide_ausente.clip(upper=2)
 # Resultado
 resultado_ausente = wide_ausente.reset_index()
 print(resultado_ausente)
+
+print("Exames analisados:")
+print(len(resultado_ausente.cd_exame.unique()))
 
 # Salvar em CSV
 # resultado.to_csv("ausentes_por_dente.csv", index=False
@@ -112,7 +160,7 @@ wide_carie = (
 
 # Garante a grade completa de dentes (11–18, 21–28, 31–38, 41–48) e renomeia colunas
 wide_carie = wide_carie.reindex(columns=todos_dentes, fill_value=0)
-print(wide_carie)
+# print(wide_carie)
 
 
 wide_carie.columns = [f"carie_{d}" for d in wide_carie.columns]
@@ -122,7 +170,9 @@ wide_carie = wide_carie.clip(upper=2)
 
 # Resultado final
 resultado_carie = wide_carie.reset_index()
-print(resultado_carie)
+# print(resultado_carie)
+print("Exames analisados:")
+print(len(resultado_carie.cd_exame.unique()))
 
 
 #Criando a tabela para obturados
@@ -150,7 +200,10 @@ wide_obturado.columns = [f"obturado_{d}" for d in wide_obturado.columns]
 wide_obturado = wide_obturado.clip(upper=2)
 
 # Resultado final
-resultado_obturado = wide_obturado.reset_index()  # colunas: cd_exame, obturado_11, ..., obturado_48
+resultado_obturado = wide_obturado.reset_index()
+
+print("Exames analisados:")
+print(len(resultado_obturado.cd_exame.unique()))
 
 # (Opcional) salvar em CSV
 # resultado.to_csv("obturados_por_dente.csv", index=False)
@@ -161,11 +214,32 @@ resultado_obturado = wide_obturado.reset_index()  # colunas: cd_exame, obturado_
 
 # print(resultado_ausente)
 
-final = pd.merge(resultado_ausente, resultado_carie, on="cd_exame")
-final = pd.merge(final, resultado_obturado, on="cd_exame") 
+final = pd.merge(resultado_ausente, resultado_carie, on="cd_exame", how="outer")
+final = pd.merge(final, resultado_obturado, on="cd_exame", how="outer")
 
-print(final.head())
+print("Exames analisados - final:")
+print(len(resultado_ausente.cd_exame.unique()))
+
+# print(final.head())
 
 # print(final.shape)
 
-final.to_csv("/home/aninha/Desktop/Doutorado/Dados/tabela_cpod_larga_predicao.csv")
+
+##### Adicionar infos do paciente
+
+infos = pd.read_csv("/var/home/aninha/Desktop/Doutorado/Dados/resultados_com_origem_idade_sexo.csv")
+duplicados = infos[infos.duplicated(subset=['cd_exame'], keep=False)]
+print(duplicados)
+
+print(infos.shape)
+print(final.shape)
+
+final = pd.merge(infos, final, on="cd_exame", how="outer")
+print(final.shape)
+
+final.to_csv("/home/aninha/Desktop/Doutorado/Dados/tabela_cpod_larga_predicao.csv", index=False)
+
+##### Checar duplicados
+
+duplicados = final[final.duplicated(subset=['cd_exame'], keep=False)]
+# print(duplicados)
