@@ -36,7 +36,7 @@ achados_obturado_norm = {
 
 todos_dentes = list(range(11, 19)) + list(range(21, 29)) + list(range(31, 39)) + list(range(41, 49))
 
-##### Dados extraidos do banco de dados - versao larga ##### 
+##### Dados extraídos do banco de dados - versão larga ##### 
 
 dados_pc = pd.read_csv("/home/aninha/Desktop/Doutorado/Dados/tabela_cpd_larga.csv")
 # print(dados_pc)
@@ -74,7 +74,7 @@ wide_obturado = wide_obturado.reindex(columns=todos_dentes, fill_value=0)
 
 wide_obturado.columns = [f"obturado_{d}" for d in wide_obturado.columns]
 
-# # 6) Limita o valor máximo a 2 por dente, como você pediu
+# Limita o valor máximo a 2 por dente, como você pediu
 # wide_obturado = wide_obturado.clip(upper=2)
 
 # Resultado final
@@ -161,7 +161,7 @@ wide_ausente = wide_ausente.reindex(columns=todos_dentes, fill_value=0)
 
 wide_ausente.columns = [f"ausente_{d}" for d in wide_ausente.columns]
 
-# 6) Limita o valor máximo a 1 por dente
+# Limita o valor máximo a 1 por dente
 wide_ausente = wide_ausente.clip(upper=1)
 
 # Resultado
