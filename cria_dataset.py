@@ -2,6 +2,7 @@ import re
 import unicodedata
 import pandas as pd
 import sys
+import numpy as np
 
 #####  Código para construir o dataset ##### 
 
@@ -38,13 +39,40 @@ todos_dentes = list(range(11, 19)) + list(range(21, 29)) + list(range(31, 39)) +
 
 ##### Dados extraídos do banco de dados - versão larga ##### 
 
+#versao original
 dados_pc = pd.read_csv("/home/aninha/Desktop/Doutorado/Dados/tabela_cpd_larga.csv")
-# print(dados_pc)
+
+# print(dados_pc.head())
 # print(dados_pc.isna().any().any())
 # print(dados_pc.shape)
 
+
 dados_auditoria = pd.read_csv("/home/aninha/Desktop/Doutorado/Dados/anotadas/associacao_com_gabarito_dente_achado.csv")
 # print(dados_auditoria.head())
+
+# print(len(dados_auditoria["filename"].unique()))
+
+dados_auditoria["filename"] = (
+    dados_auditoria["filename"]
+    .str.extract(r"^([A-Za-z]+\.\d+)", expand=False)   # captura VMA.247871
+    .str.lower()                                       # deixa minúsculo
+    .str.strip()
+)
+
+
+pessoas_banco = dados_pc.cd_exame.unique()
+pessoas_auditoria = dados_auditoria["filename"].unique()
+
+pessoas = set(pessoas_banco).intersection(set(pessoas_auditoria))
+# print(list(pessoas))
+
+dados_pc = dados_pc[dados_pc["cd_exame"].isin(pessoas)]
+dados_auditoria = dados_auditoria[dados_auditoria["filename"].isin(pessoas)]
+
+# print(dados_pc.shape)
+# print(dados_auditoria.shape)
+
+# print(len(dados_auditoria["filename"].unique()))
 
 achado_norm = (
     dados_auditoria["Achado"]
@@ -57,6 +85,7 @@ achado_norm = (
 df_obturado = dados_auditoria[achado_norm.isin(achados_obturado_norm)].copy()
 
 df_obturado["cd_exame"] = df_obturado["filename"].map(extrair_cd_exame)
+
 
 # Marca uma ocorrência de "obturado" por linha
 df_obturado["obturado"] = 1
@@ -74,37 +103,111 @@ wide_obturado = wide_obturado.reindex(columns=todos_dentes, fill_value=0)
 
 wide_obturado.columns = [f"obturado_{d}" for d in wide_obturado.columns]
 
+# Identificar pessoas que NÃO estão no wide_obturado
+pessoas_faltantes = set(pessoas) - set(wide_obturado.index)
+
+# Criar dataframe com essas pessoas e colunas preenchidas com zero
+df_faltantes = pd.DataFrame(
+    0,
+    index=sorted(pessoas_faltantes),
+    columns=wide_obturado.columns
+)
+
+# Juntar tudo
+wide_obturado = pd.concat([wide_obturado, df_faltantes])
+
+# print(wide_obturado.head())
+# print(wide_obturado.shape)
+
+
 # Limita o valor máximo a 2 por dente, como você pediu
 # wide_obturado = wide_obturado.clip(upper=2)
 
 # Resultado final
 resultado_obturado = wide_obturado.reset_index()
+resultado_obturado = resultado_obturado.rename(columns={"index": "cd_exame"})
 # print(resultado_obturado.head())
-print(resultado_obturado.shape)
+# print(resultado_obturado.shape)
 
+### Adicionando anotação de cárie
+
+achado_norm = (
+    dados_auditoria["Achado"]
+    .astype(str)
+    .str.lower()
+    .map(strip_accents)
+    .str.strip()
+)
+
+df_carie = dados_auditoria[achado_norm.isin(achados_carie_norm)].copy()
+
+df_carie["cd_exame"] = df_carie["filename"].map(extrair_cd_exame)
+
+# Marca uma ocorrência de "carie" por linha
+df_carie["carie_anot"] = 1
+# print(df_carie.head())
+
+# Tabela dinâmica (somando ocorrências por exame x dente)
+wide_carie = (
+    df_carie
+    .pivot_table(index="cd_exame", columns="Dente", values="carie_anot", aggfunc="sum", fill_value=0)
+    .sort_index(axis=1)
+)
+
+# Garante a grade completa de dentes (11–18, 21–28, 31–38, 41–48) e renomeia colunas
+wide_carie = wide_carie.reindex(columns=todos_dentes, fill_value=0)
+
+wide_carie.columns = [f"carie_anot_{d}" for d in wide_carie.columns]
+
+# Identificar pessoas que NÃO estão no wide_obturado
+pessoas_faltantes = set(pessoas) - set(wide_carie.index)
+
+# Criar dataframe com essas pessoas e colunas preenchidas com zero
+df_faltantes = pd.DataFrame(
+    0,
+    index=sorted(pessoas_faltantes),
+    columns=wide_carie.columns
+)
+
+# Juntar tudo
+wide_carie = pd.concat([wide_carie, df_faltantes])
+
+# Resultado final
+resultado_carie = wide_carie.reset_index()
+resultado_carie = resultado_carie.rename(columns={"index": "cd_exame"})
+
+# print(resultado_carie.columns)
+# print(resultado_carie.shape)
+
+# print(resultado_obturado.head())
 
 ### Testando se estou com os mesmos exames ###
-set_pc = set(dados_pc["cd_exame"].unique())
-set_obt = set(resultado_obturado["cd_exame"].unique())
-# Só em dados_pc
-so_pc = set_pc - set_obt
+# set_pc = set(dados_pc["cd_exame"].unique())
+# set_obt = set(resultado_obturado["cd_exame"].unique())
+# # Só em dados_pc
+# so_pc = set_pc - set_obt
 
-# Só em resultado_obturado
-so_obt = set_obt - set_pc
+# # Só em resultado_obturado
+# so_obt = set_obt - set_pc
 
-print(f"Só em dados_pc: {len(so_pc)} exames")
-print(f"Só em resultado_obturado: {len(so_obt)} exames")
+# print(f"Só em dados_pc: {len(so_pc)} exames")
+# print(f"Só em resultado_obturado: {len(so_obt)} exames")
 
-dados_pc_exclusivos = dados_pc[dados_pc["cd_exame"].isin(so_pc)]
-resultado_obturado_exclusivos = resultado_obturado[resultado_obturado["cd_exame"].isin(so_obt)]
+# dados_pc_exclusivos = dados_pc[dados_pc["cd_exame"].isin(so_pc)]
+# resultado_obturado_exclusivos = resultado_obturado[resultado_obturado["cd_exame"].isin(so_obt)]
 
-print(dados_pc_exclusivos.cd_exame)
-print(resultado_obturado_exclusivos.cd_exame)
+# print(dados_pc_exclusivos.cd_exame)
+# print(resultado_obturado_exclusivos.cd_exame)
 
 # print("Exames analisados:")
 # print(len(resultado_obturado.cd_exame.unique()))
 
+print(dados_pc.head())
+print(resultado_obturado.head())
+
 final = pd.merge(dados_pc, resultado_obturado, on="cd_exame", how="inner")
+final = pd.merge(final, resultado_carie, on="cd_exame", how="inner")
+
 print(final)
 # print(dados_pc.isna().any().any())
 
@@ -114,13 +217,16 @@ print(len(final.cd_exame.unique()))
 
 infos = pd.read_csv("/var/home/aninha/Desktop/Doutorado/Dados/resultados_com_origem_idade_sexo.csv")
 
-print(infos.shape)
-print(final.shape)
+# print(infos.shape)
+# print(final.shape)
 
 final = pd.merge(infos, final, on="cd_exame", how="right")
 print(final.shape)
 
-final.to_csv("/home/aninha/Desktop/Doutorado/Dados/tabela_cpod_larga_gabarito.csv", index=False)
+# final.to_csv("/home/aninha/Desktop/Doutorado/Dados/tabela_cpod_larga_gabarito.csv", index=False)
+final.to_csv("/home/aninha/Desktop/Doutorado/Dados/tabela_cpod_larga_gabarito2.csv", index=False)
+
+sys.exit()
 
 
 ##### Dados extraidos do CVAT de auditoria e processados pela Papiron ##### 

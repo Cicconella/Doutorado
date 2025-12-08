@@ -1,0 +1,340 @@
+# Função para modelar CPOD com idade, sexo e origem
+modelar_cpod <- function(gabarito_cpod, gabarito) {
+  
+  # Une as variáveis sociodemográficas (por cd_exame)
+  df <- gabarito_cpod %>%
+    inner_join(gabarito %>% dplyr::select(cd_exame, idade, sexo, origem), by = "cd_exame")
+  
+  # Teste de normalidade (Shapiro-Wilk)
+  x <- df$cpod_total
+  x_test <- if (length(x) > 5000) sample(x, 5000) else x
+  normal_test <- shapiro.test(x_test)
+  print(paste("Shapiro-Wilk p-value:", round(normal_test$p.value, 5)))
+  
+  # Decide o tipo de modelo
+  if (normal_test$p.value > 0.05) {
+    message("Distribuição aproximadamente normal — ajustando modelo linear.")
+    modelo <- lm(cpod_total ~ idade + sexo + origem, data = df)
+  } else {
+    message("Distribuição não normal — ajustando modelo de Binomial Negativa.")
+    modelo <- MASS::glm.nb(cpod_total ~ idade + sexo + origem, data = df)
+  }
+  
+  # Resumo do modelo
+  print(summary(modelo))
+  
+  # Coeficientes limpos
+  print(broom::tidy(modelo, conf.int = TRUE))
+  
+  # Gráficos principais
+  p_idade <- ggplot(df, aes(x = idade, y = cpod_total)) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", color = "steelblue") +
+    labs(title = "DMFT vs Age", x = "Age", y = "DMFT total") +
+    theme_minimal(base_size = 13)
+  
+  p_sexo <- ggplot(df, aes(x = sexo, y = cpod_total, fill = sexo)) +
+    geom_boxplot(alpha = 0.7) +
+    labs(title = "DMFT by Sex", x = "", y = "DMFT total") +
+    theme_minimal(base_size = 13)
+  
+  p_origem <- ggplot(df, aes(x = origem, y = cpod_total, fill = origem)) +
+    geom_boxplot(alpha = 0.7) +
+    labs(title = "DMFT by Region", x = "Clinic region", y = "DMFT total") +
+    theme_minimal(base_size = 13) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  print(p_idade)
+  print(p_sexo)
+  print(p_origem)
+  
+  return(list(
+    modelo = modelo,
+    normal_test = normal_test,
+    dados = df
+  ))
+}
+
+resultado_modelo <- modelar_cpod(gabarito_cpod, gabarito)
+
+
+
+
+modelar_cpod <- function(gabarito_cpod, gabarito) {
+  
+  # Merge sociodemographic variables
+  df <- gabarito_cpod %>%
+    inner_join(gabarito %>% dplyr::select(cd_exame, idade, sexo, origem), 
+               by = "cd_exame")
+  
+  # Normality test
+  x <- df$cpod_total
+  x_test <- if (length(x) > 5000) sample(x, 5000) else x
+  normal_test <- shapiro.test(x_test)
+  print(paste("Shapiro-Wilk p-value:", round(normal_test$p.value, 5)))
+  
+  # Choose model
+  if (normal_test$p.value > 0.05) {
+    message("Distribution ~ normal — fitting Linear Model (LM).")
+    modelo <- lm(cpod_total ~ idade + sexo + origem, data = df)
+    tipo <- "lm"
+  } else {
+    message("Distribution not normal — fitting Negative Binomial Model.")
+    modelo <- MASS::glm.nb(cpod_total ~ idade + sexo + origem, data = df)
+    tipo <- "nb"
+  }
+  
+  print(summary(modelo))
+  print(broom::tidy(modelo, conf.int = TRUE))
+  
+  ##------------------------------------------
+  ## Plots: DMFT vs age, sex, region (unchanged)
+  ##------------------------------------------
+  
+  p_idade <- ggplot(df, aes(x = idade, y = cpod_total)) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", color = "steelblue") +
+    labs(title = "DMFT vs Age", x = "Age", y = "DMFT Total") +
+    theme_minimal(base_size = 13)
+  
+  p_sexo <- ggplot(df, aes(x = sexo, y = cpod_total, fill = sexo)) +
+    geom_boxplot(alpha = 0.7) +
+    labs(title = "DMFT by Sex", x = "", y = "DMFT Total") +
+    theme_minimal(base_size = 13)
+  
+  p_origem <- ggplot(df, aes(x = origem, y = cpod_total, fill = origem)) +
+    geom_boxplot(alpha = 0.7) +
+    labs(title = "DMFT by Clinic Region", x = "Clinic region", y = "DMFT Total") +
+    theme_minimal(base_size = 13) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  print(p_idade)
+  print(p_sexo)
+  print(p_origem)
+  
+  ##------------------------------------------
+  ## Diagnostic Analysis
+  ##------------------------------------------
+  message("\n### Diagnostic analysis\n")
+  
+  diag_plots <- list()
+  
+  if (tipo == "lm") {
+    # Fitted values and residuals
+    df_diag <- augment(modelo)
+    
+    # 1. Residuals vs fitted
+    p1 <- ggplot(df_diag, aes(.fitted, .resid)) +
+      geom_point(alpha = 0.5) +
+      geom_hline(yintercept = 0, color = "red") +
+      labs(title = "Residuals vs Fitted", x = "Fitted values", y = "Residuals") +
+      theme_minimal(base_size = 13)
+    
+    # 2. QQ-Plot
+    p2 <- ggplot(df_diag, aes(sample = .stdresid)) +
+      stat_qq() + stat_qq_line(color = "red") +
+      labs(title = "Normal Q-Q Plot") +
+      theme_minimal(base_size = 13)
+    
+    # 3. Scale–Location
+    p3 <- ggplot(df_diag, aes(.fitted, sqrt(abs(.stdresid)))) +
+      geom_point(alpha = 0.5) +
+      geom_smooth(method = "loess", se = FALSE, color = "red") +
+      labs(title = "Scale-Location Plot", x = "Fitted values", y = "√|Standardized residuals|") +
+      theme_minimal(base_size = 13)
+    
+    # 4. Residuals vs Leverage
+    p4 <- ggplot(df_diag, aes(.hat, .stdresid)) +
+      geom_point(alpha = 0.5) +
+      geom_smooth(method = "loess", se = FALSE, color = "red") +
+      labs(title = "Residuals vs Leverage", x = "Leverage", y = "Standardized residuals") +
+      theme_minimal(base_size = 13)
+    
+    diag_plots <- list(p1 = p1, p2 = p2, p3 = p3, p4 = p4)
+    
+    print(p1); print(p2); print(p3); print(p4)
+  }
+  
+  if (tipo == "nb") {
+    df_diag <- broom::augment(modelo, type.residuals = "pearson")
+    
+    # 1. Pearson residuals vs fitted
+    p1 <- ggplot(df_diag, aes(.fitted, .resid)) +
+      geom_point(alpha = 0.5) +
+      geom_hline(yintercept = 0, color = "red") +
+      labs(title = "Pearson Residuals vs Fitted", x = "Fitted values", y = "Pearson residuals") +
+      theme_minimal(base_size = 13)
+    
+    # 2. QQ-plot
+    p2 <- ggplot(df_diag, aes(sample = .resid)) +
+      stat_qq() + stat_qq_line(color = "red") +
+      labs(title = "Residuals Q-Q Plot") +
+      theme_minimal(base_size = 13)
+    
+    # 3. Histogram of residuals
+    p3 <- ggplot(df_diag, aes(x = .resid)) +
+      geom_histogram(fill = "steelblue", color = "white", bins = 40) +
+      labs(title = "Histogram of Residuals", x = "Residuals") +
+      theme_minimal(base_size = 13)
+    
+    # 4. Cook’s distance
+    cooks <- cooks.distance(modelo)
+    df_cook <- tibble(index = seq_along(cooks), cook = cooks)
+    
+    p4 <- ggplot(df_cook, aes(index, cook)) +
+      geom_point(alpha = 0.6) +
+      labs(title = "Cook's Distance", x = "Observation index", y = "Cook's distance") +
+      theme_minimal(base_size = 13)
+    
+    diag_plots <- list(p1 = p1, p2 = p2, p3 = p3, p4 = p4)
+    
+    print(p1); print(p2); print(p3); print(p4)
+  }
+  
+  return(list(
+    modelo = modelo,
+    normality_test = normal_test,
+    dados = df,
+    diagnostic_plots = diag_plots
+  ))
+}
+
+
+modelar_cpod <- function(gabarito_cpod, gabarito) {
+  
+  # Merge sociodemographic variables
+  df <- gabarito_cpod %>%
+    inner_join(gabarito %>% dplyr::select(cd_exame, idade, sexo, origem), 
+               by = "cd_exame")
+  
+  # Normality test
+  x <- df$cpod_total
+  x_test <- if (length(x) > 5000) sample(x, 5000) else x
+  normal_test <- shapiro.test(x_test)
+  print(paste("Shapiro-Wilk p-value:", round(normal_test$p.value, 5)))
+  
+  # Choose model
+  if (normal_test$p.value > 0.05) {
+    message("Distribution ~ normal — fitting Linear Model (LM).")
+    modelo <- lm(cpod_total ~ idade + sexo + origem, data = df)
+    tipo <- "lm"
+  } else {
+    message("Distribution not normal — fitting Negative Binomial Model.")
+    modelo <- MASS::glm.nb(cpod_total ~ idade + sexo + origem, data = df)
+    tipo <- "nb"
+  }
+  
+  print(summary(modelo))
+  print(broom::tidy(modelo, conf.int = TRUE))
+  
+  ##------------------------------------------
+  ## Plots: DMFT vs age, sex, region (unchanged)
+  ##------------------------------------------
+  
+  p_idade <- ggplot(df, aes(x = idade, y = cpod_total)) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", color = "steelblue") +
+    labs(title = "DMFT vs Age", x = "Age", y = "DMFT Total") +
+    theme_minimal(base_size = 13)
+  
+  p_sexo <- ggplot(df, aes(x = sexo, y = cpod_total, fill = sexo)) +
+    geom_boxplot(alpha = 0.7) +
+    labs(title = "DMFT by Sex", x = "", y = "DMFT Total") +
+    theme_minimal(base_size = 13)
+  
+  p_origem <- ggplot(df, aes(x = origem, y = cpod_total, fill = origem)) +
+    geom_boxplot(alpha = 0.7) +
+    labs(title = "DMFT by Clinic Region", x = "Clinic region", y = "DMFT Total") +
+    theme_minimal(base_size = 13) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  print(p_idade)
+  print(p_sexo)
+  print(p_origem)
+  
+  ##------------------------------------------
+  ## Diagnostic Analysis
+  ##------------------------------------------
+  message("\n### Diagnostic analysis\n")
+  
+  diag_plots <- list()
+  
+  if (tipo == "lm") {
+    # Fitted values and residuals
+    df_diag <- augment(modelo)
+    
+    # 1. Residuals vs fitted
+    p1 <- ggplot(df_diag, aes(.fitted, .resid)) +
+      geom_point(alpha = 0.5) +
+      geom_hline(yintercept = 0, color = "red") +
+      labs(title = "Residuals vs Fitted", x = "Fitted values", y = "Residuals") +
+      theme_minimal(base_size = 13)
+    
+    # 2. QQ-Plot
+    p2 <- ggplot(df_diag, aes(sample = .stdresid)) +
+      stat_qq() + stat_qq_line(color = "red") +
+      labs(title = "Normal Q-Q Plot") +
+      theme_minimal(base_size = 13)
+    
+    # 3. Scale–Location
+    p3 <- ggplot(df_diag, aes(.fitted, sqrt(abs(.stdresid)))) +
+      geom_point(alpha = 0.5) +
+      geom_smooth(method = "loess", se = FALSE, color = "red") +
+      labs(title = "Scale-Location Plot", x = "Fitted values", y = "√|Standardized residuals|") +
+      theme_minimal(base_size = 13)
+    
+    # 4. Residuals vs Leverage
+    p4 <- ggplot(df_diag, aes(.hat, .stdresid)) +
+      geom_point(alpha = 0.5) +
+      geom_smooth(method = "loess", se = FALSE, color = "red") +
+      labs(title = "Residuals vs Leverage", x = "Leverage", y = "Standardized residuals") +
+      theme_minimal(base_size = 13)
+    
+    diag_plots <- list(p1 = p1, p2 = p2, p3 = p3, p4 = p4)
+    
+    print(p1); print(p2); print(p3); print(p4)
+  }
+  
+  if (tipo == "nb") {
+    df_diag <- broom::augment(modelo, type.residuals = "pearson")
+    
+    # 1. Pearson residuals vs fitted
+    p1 <- ggplot(df_diag, aes(.fitted, .resid)) +
+      geom_point(alpha = 0.5) +
+      geom_hline(yintercept = 0, color = "red") +
+      labs(title = "Pearson Residuals vs Fitted", x = "Fitted values", y = "Pearson residuals") +
+      theme_minimal(base_size = 13)
+    
+    # 2. QQ-plot
+    p2 <- ggplot(df_diag, aes(sample = .resid)) +
+      stat_qq() + stat_qq_line(color = "red") +
+      labs(title = "Residuals Q-Q Plot") +
+      theme_minimal(base_size = 13)
+    
+    # 3. Histogram of residuals
+    p3 <- ggplot(df_diag, aes(x = .resid)) +
+      geom_histogram(fill = "steelblue", color = "white", bins = 40) +
+      labs(title = "Histogram of Residuals", x = "Residuals") +
+      theme_minimal(base_size = 13)
+    
+    # 4. Cook’s distance
+    cooks <- cooks.distance(modelo)
+    df_cook <- tibble(index = seq_along(cooks), cook = cooks)
+    
+    p4 <- ggplot(df_cook, aes(index, cook)) +
+      geom_point(alpha = 0.6) +
+      labs(title = "Cook's Distance", x = "Observation index", y = "Cook's distance") +
+      theme_minimal(base_size = 13)
+    
+    diag_plots <- list(p1 = p1, p2 = p2, p3 = p3, p4 = p4)
+    
+    print(p1); print(p2); print(p3); print(p4)
+  }
+  
+  return(list(
+    modelo = modelo,
+    normality_test = normal_test,
+    dados = df,
+    diagnostic_plots = diag_plots
+  ))
+}
